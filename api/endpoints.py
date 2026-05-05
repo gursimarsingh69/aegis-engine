@@ -149,6 +149,7 @@ async def compare(
             candidates.append({
                 "asset": {
                     "asset_id": asset.get("id"),
+                    "image_url": asset.get("image_url"),
                     "phash": hs.get("phash"),
                     "dhash": hs.get("dhash"),
                     "ahash": hs.get("ahash"),
