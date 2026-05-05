@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pillow
+imagehash
+opencv-python-headless
+python-multipart
+google-genai
+python-dotenv
+requests

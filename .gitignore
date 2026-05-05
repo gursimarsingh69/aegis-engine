@@ -1,0 +1,25 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local DB and Dynamic Assets
+# We do not want to push locally downloaded media or local states to Github!
+assets/
+suspicious/
+db.json
+
+# Ignore test artifacts
+*.jpg
+*.png
+*.jpeg
+out.txt
