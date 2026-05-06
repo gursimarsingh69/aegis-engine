@@ -9,6 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 API_KEY = os.environ.get("GEMINI_API_KEY")
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY")
+NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "mistralai/pixtral-12b")
+NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
+
+import base64
 
 import asyncio
 
@@ -112,7 +117,117 @@ async def verify_semantic_match_with_gemini(suspicious_path, db_assets):
                     await asyncio.sleep(delay)
                 else:
                     print("Gemini API Error:", e)
+                    if NVIDIA_API_KEY:
+                        print("Attempting NVIDIA NIM fallback due to Gemini error...")
+                        return await verify_semantic_match_with_nvidia(suspicious_path, db_assets)
                     return None
         
         print("Gemini API Error: Max retries exceeded for 429 error.")
+        
+        # ── NVIDIA Fallback ──────────────────────────────────────────────────
+        if NVIDIA_API_KEY:
+            print("Attempting NVIDIA NIM fallback...")
+            return await verify_semantic_match_with_nvidia(suspicious_path, db_assets)
+            
+        return None
+
+def encode_image_to_base64(image_path):
+    with open(image_path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+async def verify_semantic_match_with_nvidia(suspicious_path, db_assets):
+    """
+    Fallback implementation using NVIDIA NIM (Mistral/Pixtral).
+    """
+    if not NVIDIA_API_KEY:
+        print("NVIDIA API Key not set. Skipping fallback.")
+        return None
+
+    try:
+        prompt = """
+        You are an expert copyright and media infringement detection AI.
+        I will provide you with a Suspicious Image, followed by a list of Official Images.
+        
+        Your task is to determine if the Suspicious Image is derived from, is a cropped version of, or depicts the EXACT SAME source material as any of the Official Images. 
+        
+        CRITICAL RULES:
+        1. If the Suspicious Image is simply a heavily cropped, resized, or zoomed-in section of an Official Image, IT IS A MATCH.
+        2. Missing features (e.g., horns, text, or background elements) that are cut off due to cropping DO NOT mean it is a different image. It is still a MATCH.
+        3. Color grading, filters, watermarks, or minor edits do not change the underlying match.
+        
+        Respond strictly in the following JSON format without any markdown wrappers or extra text:
+        {
+          "match": true,
+          "similarity_score": <integer 0-100>,
+          "matched_asset_id": "<asset_id>",
+          "reason": "<explanation>",
+          "modifications": ["<differences>"]
+        }
+        """
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/jpeg;base64,{encode_image_to_base64(suspicious_path)}"}
+                    }
+                ]
+            }
+        ]
+
+        # Add official images to the message
+        for asset in db_assets:
+            if "image_url" in asset and asset["image_url"]:
+                try:
+                    res = requests.get(asset["image_url"])
+                    if res.status_code == 200:
+                        b64_img = base64.b64encode(res.content).decode("utf-8")
+                        messages[0]["content"].append({
+                            "type": "text", 
+                            "text": f"Official Asset ID: {asset['asset_id']}"
+                        })
+                        messages[0]["content"].append({
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                        })
+                except Exception as e:
+                    print(f"Error encoding asset for NVIDIA: {e}")
+
+        payload = {
+            "model": NVIDIA_MODEL,
+            "messages": messages,
+            "max_tokens": 2048,
+            "temperature": 0.15,
+            "top_p": 1.0,
+            "stream": False
+        }
+
+        headers = {
+            "Authorization": f"Bearer {NVIDIA_API_KEY}",
+            "Accept": "application/json"
+        }
+
+        # Run the request in a thread to keep it non-blocking for the event loop
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(None, lambda: requests.post(NVIDIA_URL, headers=headers, json=payload))
+
+        if response.status_code == 200:
+            result_data = response.json()
+            content = result_data["choices"][0]["message"]["content"].strip()
+            
+            if content.startswith("```json"):
+                content = content[7:-3].strip()
+            elif content.startswith("```"):
+                content = content[3:-3].strip()
+                
+            return json.loads(content)
+        else:
+            print(f"NVIDIA API Error: {response.status_code} - {response.text}")
+            return None
+
+    except Exception as e:
+        print(f"NVIDIA Fallback failed: {e}")
         return None
