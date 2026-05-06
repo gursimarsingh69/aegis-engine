@@ -34,17 +34,25 @@ async def verify_semantic_match_with_gemini(suspicious_path, db_assets):
                 client = genai.Client(api_key=API_KEY)
                 
                 prompt = """
-                You are an expert copyright and media alteration detection AI.
-                I will provide you with a Suspicious Image, followed by a list of Official Registered Images.
-                Does the Suspicious Image depict the EXACT SAME real-world event, scene, or person at the exact same moment in time as any of the Official Images? It might be taken from a different angle, have different lighting, or be heavily cropped.
+                You are an expert copyright and media infringement detection AI.
+                I will provide you with a Suspicious Image, followed by a list of Official Images.
+                
+                Your task is to determine if the Suspicious Image is derived from, is a cropped version of, or depicts the EXACT SAME source material as any of the Official Images. 
+                
+                CRITICAL RULES:
+                1. If the Suspicious Image is simply a heavily cropped, resized, or zoomed-in section of an Official Image, IT IS A MATCH.
+                2. Missing features (e.g., horns, text, or background elements) that are cut off due to cropping DO NOT mean it is a different image. It is still a MATCH.
+                3. Color grading, filters, watermarks, or minor edits do not change the underlying match.
+                
+                If you find a match, identify the most similar Official Image.
                 
                 Respond strictly in the following JSON format without any markdown wrappers or extra text:
                 {
                   "match": true,
-                  "similarity_score": <integer 0-100 representing how semantically similar the most similar official image is>,
-                  "matched_asset_id": "<asset_id of the most similar official image, MUST NOT BE NULL>",
-                  "reason": "<brief explanation>",
-                  "modifications": ["<list of visual differences, e.g. 'cropped', 'different lighting', or 'none'>"]
+                  "similarity_score": <integer 0-100 representing confidence that it is the same source material>,
+                  "matched_asset_id": "<asset_id of the matched official image, MUST NOT BE NULL if match is true>",
+                  "reason": "<brief explanation focusing on why it is a match despite any cropping or edits>",
+                  "modifications": ["<list of visual differences, e.g. 'heavily cropped', 'color shifted', 'watermarked', or 'none'>"]
                 }
                 """
                 
@@ -67,6 +75,8 @@ async def verify_semantic_match_with_gemini(suspicious_path, db_assets):
                                 img = Image.open(tf.name)
                                 contents.append(f"Asset ID: {asset['asset_id']}")
                                 contents.append(img)
+                            else:
+                                print(f"Warning: Failed to fetch image for asset {asset.get('asset_id')}. HTTP {res.status_code} - {res.text}")
                     except Exception as ex:
                         print(f"Error loading image from URL: {ex}")
                         pass
