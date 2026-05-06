@@ -30,8 +30,8 @@ async def verify_semantic_match_with_gemini(suspicious_path, db_assets):
         if not API_KEY or API_KEY == "YOUR_API_KEY_HERE":
             return None  # Skip if API key not set
 
-        max_retries = 5
-        base_delay = 10  # Start with 10 seconds
+        max_retries = 3
+        base_delay = 10  # 10 seconds fixed gap
         
         for attempt in range(max_retries):
             try:
@@ -112,7 +112,7 @@ async def verify_semantic_match_with_gemini(suspicious_path, db_assets):
             except Exception as e:
                 error_msg = str(e)
                 if "429" in error_msg or "RESOURCE_EXHAUSTED" in error_msg:
-                    delay = base_delay * (2 ** attempt)
+                    delay = base_delay
                     print(f"Gemini API Rate Limit hit (429). Retrying in {delay}s... (Attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(delay)
                 else:
